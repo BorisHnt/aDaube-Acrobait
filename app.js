@@ -1,4 +1,5 @@
 import * as pdfjs from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
+import {t, translateInterface, setLanguage, onLanguageChange} from './i18n.js';
 pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
 
 const $ = (id) => document.getElementById(id);
@@ -29,15 +30,15 @@ function undo(){if(!state.history.length)return;state.future.push(snapshot());re
 function redo(){if(!state.future.length)return;state.history.push(snapshot());restore(state.future.pop());syncUndo();}
 function syncUndo(){$('undo').disabled=!state.history.length;$('redo').disabled=!state.future.length;}
 function select(index,id){state.selected=id?{page:index,id}:null;state.active=index;syncSelection();}
-function setTool(tool){state.tool=tool;['select','text','rect','highlight'].forEach(t=>$('tool-'+t).classList.toggle('active',t===tool));document.querySelectorAll('.paper').forEach(p=>p.classList.toggle('text-mode',tool!=='select'));status(tool==='select'?'Mode sélection':'Outil '+tool+' : cliquez sur la page');}
+function setTool(tool){state.tool=tool;['select','text','rect','highlight'].forEach(t=>$('tool-'+t).classList.toggle('active',t===tool));document.querySelectorAll('.paper').forEach(p=>p.classList.toggle('text-mode',tool!=='select'));status(tool==='select'?t('Mode sélection'):t('Outil {tool} : cliquez sur la page',{tool:t(({text:'Zone de texte',rect:'Rectangle',highlight:'Surligneur'})[tool])}));}
 function fontList(){
   const select=$('font-family');select.replaceChildren();
   for(const [group,names] of Object.entries(standard)){
-    const opt=document.createElement('optgroup');opt.label=group;
+    const opt=document.createElement('optgroup');opt.dataset.translationKey=group;opt.label=t(group);
     for(const name of [...new Set(names)])opt.append(new Option(name,name));
     select.append(opt);
   }
-  const imported=document.createElement('optgroup');imported.label='Importées — incorporables';imported.id='imported-fonts';select.append(imported);
+  const imported=document.createElement('optgroup');imported.dataset.translationKey='Importées — incorporables';imported.label=t('Importées — incorporables');imported.id='imported-fonts';select.append(imported);
   select.value=state.defaults.family;
 }
 function add(pageIndex,kind,x=60,y=65,options={}){
@@ -45,7 +46,7 @@ function add(pageIndex,kind,x=60,y=65,options={}){
   record();
   const spec=clone(state.defaults);
   const item={id:uid(),kind,x:clamp(x,0,page.w-8),y:clamp(y,0,page.h-8),w:kind==='text'?260:145,h:kind==='text'?46:50,
-    content:kind==='text'?'Votre texte':'',family:spec.family,size:spec.size,color:spec.color,bold:spec.bold,italic:spec.italic,underline:spec.underline,align:spec.align,replace:false,...options};
+    content:kind==='text'?t('Votre texte'):'',family:spec.family,size:spec.size,color:spec.color,bold:spec.bold,italic:spec.italic,underline:spec.underline,align:spec.align,replace:false,...options};
   item.w=clamp(item.w,8,page.w-item.x);item.h=clamp(item.h,8,page.h-item.y);
   page.items.push(item);select(pageIndex,item.id);renderItems(pageIndex);renderThumbs();
   if(kind==='text'){const el=document.querySelector('[data-item-id="'+item.id+'"] .editable-text');el?.focus();if(el){document.getSelection()?.selectAllChildren(el);}}
@@ -56,7 +57,7 @@ function duplicate(){const sel=current();if(!sel)return;record();const i=clone(s
 function syncSelection(){
   document.querySelectorAll('.item').forEach(el=>el.classList.toggle('selected',el.dataset.itemId===state.selected?.id));
   document.querySelectorAll('.thumb').forEach(el=>el.classList.toggle('active',Number(el.dataset.index)===state.active));
-  $('page-status').textContent=state.pages.length?'Page '+(state.active+1)+' / '+state.pages.length:'Aucun document';
+  $('page-status').textContent=state.pages.length?t('Page {n} / {count}',{n:state.active+1,count:state.pages.length}):t('Aucun document');
   const s=current();$('no-selection').hidden=!!s;$('selection-properties').hidden=!s;
   if(!s)return;
   const o=s.item;
@@ -69,12 +70,12 @@ function syncSelection(){
   $('font-color').value=o.color;
   ['bold','italic','underline'].forEach(k=>$(k).classList.toggle('active',!!o[k]));
   ['left','center','right'].forEach(k=>$('align-'+k).classList.toggle('active',o.align===k));
-  $('font-warning').textContent=state.fonts.has(o.family)?'Police importée : sera incorporée à l’export.':'Police non importée : l’export PDF utilisera une famille standard proche. Importez le TTF/OTF pour un rendu fidèle.';
+  $('font-warning').textContent=t(state.fonts.has(o.family)?'Police importée : sera incorporée à l’export.':'Police non importée : l’export PDF utilisera une famille standard proche. Importez le TTF/OTF pour un rendu fidèle.');
 }
 function changeStyle(key,value){
   const s=current();if(s){record();s.item[key]=value;renderItems(s.index);syncSelection();renderThumbs();}
   else{state.defaults[key]=value;}
-  if(key==='family' && !state.fonts.has(value) && !['Helvetica','Times New Roman','Courier New'].includes(value))toast('Police système : à importer en TTF/OTF pour l’incorporer au PDF.');
+  if(key==='family' && !state.fonts.has(value) && !['Helvetica','Times New Roman','Courier New'].includes(value))toast(t('Police système : à importer en TTF/OTF pour l’incorporer au PDF.'));
 }
 function applyGeometry(){
   const s=current();if(!s)return;record();
@@ -96,7 +97,7 @@ function renderItems(index){
     box.style.left=(o.x*scale)+'px';box.style.top=(o.y*scale)+'px';box.style.width=(o.w*scale)+'px';box.style.height=(o.h*scale)+'px';
     if(o.kind==='text'){
       const edit=element('div','editable-text');
-      edit.contentEditable='true';edit.spellcheck=true;edit.setAttribute('role','textbox');edit.setAttribute('aria-label','Texte éditable');
+      edit.contentEditable='true';edit.spellcheck=true;edit.setAttribute('role','textbox');edit.setAttribute('aria-label',t('Texte éditable'));
       edit.textContent=o.content;
       edit.style.fontFamily='"'+o.family.replace(/"/g,'')+'", Arial, sans-serif';
       edit.style.fontSize=(o.size*scale)+'px';edit.style.color=o.color;
@@ -112,7 +113,7 @@ function renderItems(index){
       if(o.kind==='highlight')box.style.mixBlendMode='multiply';
     }
     box.addEventListener('pointerdown',(ev)=>{if(ev.target.closest('.drag-handle'))return;select(index,o.id);ev.stopPropagation();});
-    const handle=element('button','drag-handle');handle.type='button';handle.innerHTML='<span class="mi">drag_indicator</span> Déplacer';
+    const handle=element('button','drag-handle');handle.type='button';handle.innerHTML='<span class="mi">drag_indicator</span> '+t('Déplacer');
     handle.addEventListener('pointerdown',(ev)=>{ev.preventDefault();ev.stopPropagation();select(index,o.id);record();drag={id:o.id,page:index,clientX:ev.clientX,clientY:ev.clientY,x:o.x,y:o.y};});
     box.prepend(handle);host.append(box);
   }
@@ -127,13 +128,13 @@ function fillTextHits(index,layer){
     const h=element('button','pdf-text-hit');h.type='button';
     h.style.left=(hit.x*scale)+'px';h.style.top=(hit.y*scale)+'px';
     h.style.width=(hit.w*scale)+'px';h.style.height=(hit.h*scale)+'px';
-    h.title='Remplacer visuellement : '+hit.text.slice(0,85);
-    h.setAttribute('aria-label','Remplacer '+hit.text.slice(0,65));
+    h.title=t('Remplacer visuellement : {text}',{text:hit.text.slice(0,85)});
+    h.setAttribute('aria-label',t('Remplacer {text}',{text:hit.text.slice(0,65)}));
     h.addEventListener('click',(ev)=>{
       ev.preventDefault();ev.stopPropagation();
       if(state.tool!=='select')return;
       const obj=add(index,'text',hit.x,hit.y,{w:Math.max(30,hit.w+12),h:Math.max(20,hit.h*1.45),content:hit.text,size:Math.max(8,hit.h*.9),replace:true});
-      if(obj)toast('Correction visuelle : le texte d’origine demeure dans le PDF et reste extractible.');
+      if(obj)toast(t('Correction visuelle : le texte d’origine demeure dans le PDF et reste extractible.'));
     });
     layer.append(h);
   }
@@ -150,7 +151,7 @@ async function drawBase(index,canvas){
     canvas.style.width=(p.w*scale)+'px';canvas.style.height=(p.h*scale)+'px';
     const ctx=canvas.getContext('2d',{alpha:false});
     await pdfpage.render({canvasContext:ctx,viewport,canvas}).promise;
-  }catch(error){console.error(error);status('Une page du PDF n’a pas pu être affichée.');}
+  }catch(error){console.error(error);status(t('Une page du PDF n’a pas pu être affichée.'));}
 }
 function renderAll(){
   const counter=++state.generation;
@@ -184,9 +185,9 @@ async function renderThumbs(generation=state.generation){
   const host=$('thumbnails');host.replaceChildren();
   for(let index=0;index<state.pages.length;index++){
     const p=state.pages[index];
-    const button=element('button','thumb');button.dataset.index=index;button.title='Aller à la page '+(index+1);
+    const button=element('button','thumb');button.dataset.index=index;button.title=t('Aller à la page {n}',{n:index+1});
     const paper=element('div','thumb-paper'), preview=element('canvas');
-    const label=element('span');label.textContent='Page '+(index+1);
+    const label=element('span');label.textContent=t('Page {n}',{n:index+1});
     paper.append(preview);button.append(paper,label);
     button.addEventListener('click',()=>{select(index,null);document.querySelector('.page-card[data-index="'+index+'"]')?.scrollIntoView({block:'center'});});
     host.append(button);
@@ -210,8 +211,8 @@ async function renderThumbs(generation=state.generation){
 }
 async function openPDF(file){
   if(!file)return;
-  if(!/\.pdf$/i.test(file.name) && file.type!=='application/pdf'){toast('Choisissez un fichier PDF.');return;}
-  status('Ouverture du PDF...');
+  if(!/\.pdf$/i.test(file.name) && file.type!=='application/pdf'){toast(t('Choisissez un fichier PDF.'));return;}
+  status(t('Ouverture du PDF...'));
   try{
     const bytes=new Uint8Array(await file.arrayBuffer());
     const doc=await pdfjs.getDocument({data:bytes.slice()}).promise;
@@ -232,14 +233,14 @@ async function openPDF(file){
     state.reader=doc;state.source=bytes;state.pages=pages;state.active=0;state.selected=null;
     state.history=[];state.future=[];syncUndo();
     $('filename').value=file.name.replace(/\.pdf$/i,'');
-    renderAll();if(window.innerWidth<800)fitWidth();status('PDF chargé : '+pages.length+' page(s).');
-    toast('PDF ouvert. Cliquez sur un texte pour créer une correction visuelle.');
-  }catch(error){console.error(error);status('Ouverture impossible : '+error.message);toast('Impossible de lire ce PDF : '+error.message,6000);}
+    renderAll();if(window.innerWidth<800)fitWidth();status(t('PDF chargé : {n} page(s).',{n:pages.length}));
+    toast(t('PDF ouvert. Cliquez sur un texte pour créer une correction visuelle.'));
+  }catch(error){console.error(error);status(t('Ouverture impossible : {error}',{error:error.message}));toast(t('Impossible de lire ce PDF : {error}',{error:error.message}),6000);}
 }
 function newDocument(){
   state.reader=null;state.source=null;state.pages=[{w:595.28,h:841.89,original:null,hits:[],items:[]}];
   state.active=0;state.selected=null;state.history=[];state.future=[];syncUndo();
-  $('filename').value='Sans titre';renderAll();if(window.innerWidth<800)fitWidth();status('Nouveau document A4.');
+  $('filename').value=t('Sans titre');renderAll();if(window.innerWidth<800)fitWidth();status(t('Nouveau document A4.'));
 }
 function appendPage(){
   if(!state.pages.length)return newDocument();
@@ -291,9 +292,9 @@ function wrappedLines(content,font,size,maxWidth){
   return rows;
 }
 async function exportPDF(){
-  if(!state.pages.length){toast('Aucun document à exporter.');return;}
-  if(!PDF()){toast('Bibliothèque d’export indisponible. Vérifiez la connexion.');return;}
-  $('export-top').disabled=true;status('Préparation de l’export...');
+  if(!state.pages.length){toast(t('Aucun document à exporter.'));return;}
+  if(!PDF()){toast(t('Bibliothèque d’export indisponible. Vérifiez la connexion.'));return;}
+  $('export-top').disabled=true;status(t('Préparation de l’export...'));
   try{
     const output=await PDF().PDFDocument.create(),cache=new Map();
     if(window.fontkit)output.registerFontkit(window.fontkit);
@@ -313,14 +314,14 @@ async function exportPDF(){
         if(cache.has(o.family+'|'+o.bold+'|'+o.italic))font=cache.get(o.family+'|'+o.bold+'|'+o.italic);
         else{
           if(state.fonts.has(o.family)){
-            if(!window.fontkit)throw new Error('fontkit indisponible : impossible d’incorporer '+o.family);
+            if(!window.fontkit)throw new Error(t('fontkit indisponible : impossible d’incorporer {font}',{font:o.family}));
             font=await output.embedFont(state.fonts.get(o.family),{subset:true});
           }else font=await output.embedFont(baseFont(o));
           cache.set(o.family+'|'+o.bold+'|'+o.italic,font);
         }
         let lines;
         try{lines=wrappedLines(o.content,font,o.size,Math.max(8,o.w));}
-        catch(error){throw new Error('Police non compatible avec certains caractères du bloc « '+(o.content||'').slice(0,25)+' ». Importez un TTF/OTF Unicode.');}
+        catch(error){throw new Error(t('Police non compatible avec certains caractères du bloc « {text} ». Importez un TTF/OTF Unicode.',{text:(o.content||'').slice(0,25)}));}
         let baseline=height-o.y-o.size*.96;
         const minimum=height-o.y-o.h;
         for(const line of lines){
@@ -339,13 +340,13 @@ async function exportPDF(){
     const blob=new Blob([data],{type:'application/pdf'}),url=URL.createObjectURL(blob);
     const anchor=document.createElement('a');anchor.href=url;anchor.download=normalizedName($('filename').value)+'.pdf';
     document.body.append(anchor);anchor.click();anchor.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
-    status('PDF exporté : '+anchor.download);toast('PDF exporté. Les corrections sont visuelles et ne caviardent pas le contenu sous-jacent.');
-  }catch(error){console.error(error);status('Erreur d’export : '+error.message);toast('Export impossible : '+error.message,8000);}
+    status(t('PDF exporté : {name}',{name:anchor.download}));toast(t('PDF exporté. Les corrections sont visuelles et ne caviardent pas le contenu sous-jacent.'));
+  }catch(error){console.error(error);status(t('Erreur d’export : {error}',{error:error.message}));toast(t('Export impossible : {error}',{error:error.message}),8000);}
   finally{$('export-top').disabled=false;}
 }
 async function importFonts(files){
   for(const file of files){
-    if(!/\.(ttf|otf)$/i.test(file.name)){toast('Seuls les fichiers TTF/OTF sont pris en charge.');continue;}
+    if(!/\.(ttf|otf)$/i.test(file.name)){toast(t('Seuls les fichiers TTF/OTF sont pris en charge.'));continue;}
     try{
       const bytes=new Uint8Array(await file.arrayBuffer());
       const name=file.name.replace(/\.(ttf|otf)$/i,'').replace(/[_-]+/g,' ');
@@ -354,8 +355,8 @@ async function importFonts(files){
       state.fonts.set(name,bytes);
       if(![...$('font-family').options].some(x=>x.value===name))$('imported-fonts').append(new Option(name,name));
       $('font-family').value=name;changeStyle('family',name);
-      toast('Police « '+name+' » importée : sera incorporée à l’export.');
-    }catch(error){console.error(error);toast('Impossible de charger la police : '+file.name);}
+      toast(t('Police « {name} » importée : sera incorporée à l’export.',{name}));
+    }catch(error){console.error(error);toast(t('Impossible de charger la police : {name}',{name:file.name}));}
   }
 }
 function perform(action){
@@ -384,6 +385,18 @@ function perform(action){
 }
 function wire(){
   fontList();syncUndo();syncSelection();
+  // All translations are UI-only. Existing PDF annotations and their text remain untouched.
+  $('language').addEventListener('change',event=>setLanguage(event.target.value));
+  onLanguageChange(()=>{
+    for(const group of document.querySelectorAll('#font-family optgroup')) {
+      group.label=t(group.dataset.translationKey||group.label);
+    }
+    // Only rename the untouched default filename, never a PDF's real filename.
+    if(!state.source && ['Sans titre','Untitled','Chưa đặt tên'].includes($('filename').value))$('filename').value=t('Sans titre');
+    renderAll();
+    status(t('Langue de l’interface mise à jour.'));
+    $('toast').hidden=true;
+  });
   document.querySelectorAll('[data-action]').forEach(el=>el.addEventListener('click',()=>perform(el.dataset.action)));
   for(const [id,action] of Object.entries({
     'open-top':'open','open-empty':'open','export-top':'export','new-empty':'new','undo':'undo','redo':'redo','add-page':'add-page','remove-page':'delete-page','zoom-in':'zoom-in','zoom-out':'zoom-out','duplicate-object':'duplicate','delete-object':'delete','bold':'bold','italic':'italic','underline':'underline','align-left':'align-left','align-center':'align-center','align-right':'align-right'
@@ -435,4 +448,7 @@ function wire(){
   area.addEventListener('drop',e=>{const file=[...e.dataTransfer.files].find(f=>/\.pdf$/i.test(f.name)||f.type==='application/pdf');if(file)openPDF(file);});
   document.addEventListener('click',e=>{if(!e.target.closest('.menu'))document.querySelectorAll('.menu[open]').forEach(x=>x.removeAttribute('open'));});
 }
-wire();status('Prêt — ouvrez un PDF ou créez une page blanche.');
+wire();
+translateInterface();
+if($('filename').value==='Sans titre')$('filename').value=t('Sans titre');
+status(t('Prêt — ouvrez un PDF ou créez une page blanche.'));
