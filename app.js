@@ -11,15 +11,15 @@ const standard = {
 };
 const state = {
   pages:[], source:null, reader:null, selected:null, active:0, tool:'select', zoom:1,
-  history:[], future:[], fonts:new Map(), urls:[], generation:0, zoomMode:'custom',
+  history:[], future:[], fonts:new Map(), urls:[], generation:0, rasterVersion:0, zoomMode:'custom',
   defaults:{family:'Helvetica',size:16,color:'#202124',bold:false,italic:false,underline:false,align:'left'}
 };
 let seed=0, notifyTimer=0, drag=null;
 // Large PDFs are only rasterized and text-indexed when their pages enter the viewport.
 let pageObserver=null, thumbObserver=null, pageRenderQueue=[], concurrentPageRenders=0;
-const visiblePageIndices=new Set(), activePdfTasks=new Map(), enqueuedPages=new Set();
+const visiblePageIndices=new Set(), activePdfTasks=new Map(), enqueuedPages=new Set(), renderingPages=new Set();
 const pendingTextPages=new Map();
-const MAX_PDF_RENDERERS=2, MAX_CANVAS_PIXELS=12000000;
+const MAX_PDF_RENDERERS=2, MAX_CANVAS_PIXELS=9000000;
 const uid=()=> 'item-'+(++seed)+'-'+Date.now().toString(36);
 const clone=(v)=>JSON.parse(JSON.stringify(v));
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -92,7 +92,7 @@ function applyGeometry(){
   renderItems(s.index);syncSelection();renderThumbs();
 }
 function element(tag,classes){const el=document.createElement(tag);if(classes)el.className=classes;return el;}
-function renderItems(index){
+function renderItems(index,skipSelectionSync=false){
   const page=state.pages[index];const host=document.querySelector('.page-card[data-index="'+index+'"] .item-layer');if(!host)return;
   host.replaceChildren();
   const scale=state.zoom;
@@ -122,7 +122,7 @@ function renderItems(index){
     handle.addEventListener('pointerdown',(ev)=>{ev.preventDefault();ev.stopPropagation();select(index,o.id);record();drag={id:o.id,page:index,clientX:ev.clientX,clientY:ev.clientY,x:o.x,y:o.y};});
     box.prepend(handle);host.append(box);
   }
-  syncSelection();
+  if(!skipSelectionSync)syncSelection();
 }
 function fillTextHits(index,layer){
   const page=state.pages[index];layer.replaceChildren();
@@ -144,45 +144,63 @@ function fillTextHits(index,layer){
     layer.append(h);
   }
 }
+function stopRasterJobs() {
+  for(const task of activePdfTasks.values()){
+    try{task.cancel();}catch{ /* task may be finished */ }
+  }
+  activePdfTasks.clear();
+  pageRenderQueue=[];
+  enqueuedPages.clear();
+}
 function cancelPageRendering() {
   pageObserver?.disconnect();pageObserver=null;
   thumbObserver?.disconnect();thumbObserver=null;
-  for(const task of activePdfTasks.values()) {
-    try{task.cancel();}catch{ /* task already completed */ }
-  }
-  activePdfTasks.clear();pageRenderQueue=[];enqueuedPages.clear();visiblePageIndices.clear();
+  stopRasterJobs();
+  visiblePageIndices.clear();
   pendingTextPages.clear();
 }
-function queuePageRender(index,generation=state.generation) {
+const rasterKey=(pageIndex,version)=>version+':'+pageIndex;
+function queuePageRender(index,version=state.rasterVersion) {
   if(!state.reader||!state.pages[index]||state.pages[index].original===null||!visiblePageIndices.has(index))return;
-  if(enqueuedPages.has(index))return;
   const card=document.querySelector('.page-card[data-index="'+index+'"]');
-  if(!card || card.dataset.rendered===String(generation))return;
+  if(!card||card.dataset.rendered===String(version)||enqueuedPages.has(index))return;
+  if(renderingPages.has(rasterKey(index,version))){card.dataset.retry='1';return;}
   enqueuedPages.add(index);
-  pageRenderQueue.push({index,generation});
+  pageRenderQueue.push({index,version});
   processPageRenderQueue();
 }
 function processPageRenderQueue() {
   while(concurrentPageRenders<MAX_PDF_RENDERERS && pageRenderQueue.length){
     const job=pageRenderQueue.shift();
     enqueuedPages.delete(job.index);
-    if(job.generation!==state.generation || !visiblePageIndices.has(job.index))continue;
+    if(job.version!==state.rasterVersion||!visiblePageIndices.has(job.index))continue;
     const canvas=document.querySelector('.page-card[data-index="'+job.index+'"] canvas.pdf-background');
     if(!canvas)continue;
+    const key=rasterKey(job.index,job.version);
+    if(renderingPages.has(key))continue;
+    renderingPages.add(key);
     concurrentPageRenders++;
-    drawBase(job.index,canvas,job.generation).finally(()=>{
+    drawBase(job.index,canvas,job.version).finally(()=>{
+      renderingPages.delete(key);
       concurrentPageRenders--;
       processPageRenderQueue();
+      if(job.version===state.rasterVersion&&visiblePageIndices.has(job.index)){
+        const card=document.querySelector('.page-card[data-index="'+job.index+'"]');
+        if(card?.dataset.retry==='1'){
+          card.dataset.retry='';
+          if(card.dataset.rendered!==String(job.version))queuePageRender(job.index,job.version);
+        }
+      }
     });
   }
 }
-async function drawBase(index,canvas,generation) {
+async function drawBase(index,canvas,version) {
   const spec=state.pages[index], reader=state.reader;
   if(!spec||spec.original===null||!reader)return;
   let task;
   try {
     const pdfpage=await reader.getPage(spec.original+1);
-    if(generation!==state.generation||!canvas.isConnected||!visiblePageIndices.has(index))return;
+    if(version!==state.version||!canvas.isConnected||!visiblePageIndices.has(index))return;
     const logicalWidth=spec.w*state.zoom,logicalHeight=spec.h*state.zoom;
     const pixelRatio=Math.max(.1,Math.min(window.devicePixelRatio||1,3,Math.sqrt(MAX_CANVAS_PIXELS/(logicalWidth*logicalHeight))));
     const viewport=pdfpage.getViewport({scale:state.zoom*pixelRatio});
@@ -197,10 +215,15 @@ async function drawBase(index,canvas,generation) {
     task=pdfpage.render({canvasContext:ctx,viewport,canvas:ready});
     activePdfTasks.set(index,task);
     await task.promise;
-    if(generation!==state.generation||!canvas.isConnected||!visiblePageIndices.has(index))return;
+    if(version!==state.version||!canvas.isConnected||!visiblePageIndices.has(index))return;
     canvas.replaceWith(ready);
     ready.parentElement?.classList.remove('loading');
-    document.querySelector('.page-card[data-index="'+index+'"]')?.setAttribute('data-rendered',String(generation));
+    const card=document.querySelector('.page-card[data-index="'+index+'"]');
+    if(card)card.dataset.rendered=String(version);
+    // Prioritise readable raster pages. Build text hit targets only afterwards.
+    setTimeout(()=>{
+      if(version===state.rasterVersion&&visiblePageIndices.has(index))ensurePageText(index);
+    },0);
   }catch(error){
     if(error?.name!=='RenderingCancelledException'){
       console.error(error);
@@ -248,7 +271,7 @@ function loadVisiblePage(index) {
   if(!card)return;
   const layer=card.querySelector('.hit-layer');
   if(state.pages[index]?.hits)fillTextHits(index,layer);
-  else ensurePageText(index);
+  // Extract text after rasterization to avoid competing with PDF decoding.
   queuePageRender(index);
 }
 function unloadPage(index){
@@ -267,6 +290,7 @@ function unloadPage(index){
 function renderAll(){
   cancelPageRendering();
   const counter=++state.generation;
+  ++state.rasterVersion;
   const visible=state.pages.length>0;
   $('empty-state').hidden=visible;$('pages').hidden=!visible;
   $('pages').replaceChildren();
@@ -291,7 +315,7 @@ function renderAll(){
       setTool('select');
     });
     card.append(number,paper);$('pages').append(card);
-    renderItems(index);
+    renderItems(index,true);
   }
   if(visible&&window.IntersectionObserver){
     pageObserver=new IntersectionObserver(entries=>{
@@ -467,6 +491,29 @@ function restoreZoomAnchor(anchor) {
   area.scrollTop+=rect.top+anchor.y*state.zoom-anchor.clientY;
   requestAnimationFrame(()=>{area.style.scrollBehavior=oldBehavior;});
 }
+function refreshZoomLayout(){
+  // Keep the document DOM and existing page bitmaps instead of recreating every page.
+  ++state.rasterVersion;
+  stopRasterJobs();
+  for(const card of $('pages').querySelectorAll('.page-card')){
+    const index=Number(card.dataset.index),spec=state.pages[index],paper=card.querySelector('.paper');
+    if(!spec||!paper)continue;
+    const w=spec.w*state.zoom,h=spec.h*state.zoom;
+    paper.style.width=w+'px';paper.style.height=h+'px';
+    const canvas=paper.querySelector('canvas.pdf-background');
+    if(canvas){canvas.style.width=w+'px';canvas.style.height=h+'px';}
+    card.dataset.rendered='';
+    card.dataset.retry='';
+    paper.classList.toggle('loading',spec.original!==null);
+    if(spec.items.length)renderItems(index,true);
+    if(visiblePageIndices.has(index)){
+      const layer=card.querySelector('.hit-layer');
+      if(layer&&spec.hits)fillTextHits(index,layer);
+      queuePageRender(index);
+    }
+  }
+  syncSelection();
+}
 function setZoom(value,position){
   const p=state.pages[state.active]||state.pages[0];
   let zoom=value,mode='custom';
@@ -495,7 +542,7 @@ function setZoom(value,position){
   $('zoom-status').textContent=Math.round(next*100)+' %';
   $('mobile-zoom-actual').textContent=Math.round(next*100)+' %';
   if(!changed)return;
-  renderAll();
+  refreshZoomLayout();
   restoreZoomAnchor(anchor);
 }
 function fitWidth(){setZoom('fit-width');}
