@@ -493,6 +493,7 @@ function setZoom(value,position){
     select.value=String(next);
   }else select.value=mode;
   $('zoom-status').textContent=Math.round(next*100)+' %';
+  $('mobile-zoom-actual').textContent=Math.round(next*100)+' %';
   if(!changed)return;
   renderAll();
   restoreZoomAnchor(anchor);
@@ -632,6 +633,7 @@ function wire(){
     // Only rename the untouched default filename, never a PDF's real filename.
     if(!state.source && ['Sans titre','Untitled','Chưa đặt tên'].includes($('filename').value))$('filename').value=t('Sans titre');
     renderAll();
+    $('mobile-zoom-actual').textContent=Math.round(state.zoom*100)+' %';
     status(t('Langue de l’interface mise à jour.'));
     $('toast').hidden=true;
   });
@@ -655,6 +657,25 @@ function wire(){
     $('inspector').classList.toggle('mobile-open');
   });
   const zoomArea=$('scroll-area');
+  // Keep the current-page indicator in sync with the page actually being read.
+  let scrollFrame=0;
+  zoomArea.addEventListener('scroll',()=>{
+    if(scrollFrame||!state.pages.length)return;
+    scrollFrame=requestAnimationFrame(()=>{
+      scrollFrame=0;
+      const viewport=zoomArea.getBoundingClientRect();
+      const center=viewport.top+Math.min(viewport.height*.43,340);
+      let nearest=state.active,gap=Infinity;
+      for(const index of visiblePageIndices){
+        const card=$('pages').querySelector('.page-card[data-index="'+index+'"]');
+        const rect=card?.getBoundingClientRect();
+        if(!rect)continue;
+        const distance=center<rect.top?rect.top-center:center>rect.bottom?center-rect.bottom:0;
+        if(distance<gap){gap=distance;nearest=index;}
+      }
+      if(state.active!==nearest){state.active=nearest;syncSelection();}
+    });
+  },{passive:true});
   let pendingWheelZoom=null,wheelTimer=null,wheelPoint=null;
   zoomArea.addEventListener('wheel',event=>{
     if(!(event.ctrlKey||event.metaKey)||!state.pages.length)return;
