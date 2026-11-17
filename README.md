@@ -39,6 +39,18 @@ La cohérence des traductions et leurs paramètres dynamiques est vérifiée par
 
 **Vérification :** `node tests/check-i18n.mjs` et `node tests/check-viewer.mjs` vérifient les traductions et les principaux garde-fous du visualiseur. Pour les performances réelles et les gestes tactiles, un test dans Chrome/Firefox avec le PDF concerné reste nécessaire.
 
+## Correctifs de stabilité — PC (novembre 2026)
+
+- Correction de la sélection du PDF : les clics fonctionnent à nouveau après le remplacement du canvas par le rendu PDF.js.
+- Réduction des opérations inutiles : zoom sans reconstruire toutes les pages ni leurs miniatures.
+- Files de rendu PDF dédoublonnées pour éviter plusieurs rendus concurrents de la même page.
+- Extraction du texte déclenchée après l'affichage de la page, au lieu de ralentir le premier rendu.
+- Sélection des mots par index spatial ; une seule surbrillance HTML, au lieu de milliers de boutons invisibles.
+- Historique annuler/rétablir allégé : les caches d'extraction du texte ne sont plus copiés à chaque modification.
+- Budget de rendu limité à 9 millions de pixels par page afin de mieux maîtriser la mémoire.
+
+**Contrôle de régression :** `node tests/check-viewer.mjs`, `node tests/check-text-hits.mjs` et `node tests/check-i18n.mjs`. Les tests ne garantissent pas à eux seuls la stabilité de tous les PDF : les problèmes restants doivent être reproduits avec un fichier d'exemple et la version du navigateur, idéalement avec la console de développement ouverte.
+
 ## Limites importantes
 
 **Le remplacement de texte n'est pas une modification structurelle du PDF.** Il masque le texte d'origine et superpose un nouveau contenu, mais le texte original **reste extractible**. **Ne jamais s'en servir pour cacher des informations sensibles.** Aucun OCR, aucune signature électronique cryptographique, aucune garantie de conservation exacte sur tous les PDF (notamment PDF tournés ou rognés).
