@@ -28,9 +28,19 @@ const PDF=()=>window.PDFLib;
 function toast(message,duration=4500){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(notifyTimer);notifyTimer=setTimeout(()=>$('toast').hidden=true,duration);}
 function status(message){$('status').textContent=message;}
 function current(){if(!state.selected)return null;const page=state.pages[state.selected.page];const item=page?.items.find(x=>x.id===state.selected.id);return item?{page,item,index:state.selected.page}:null;}
-function snapshot(){return {pages:clone(state.pages),selected:clone(state.selected),active:state.active};}
+function snapshot(){
+  // PDF.js may extract thousands of glyphs per page; do not clone text hit arrays.
+  return {pages:state.pages.map(({w,h,original,items})=>({
+    w,h,original,hits:null,items:clone(items)
+  })),selected:clone(state.selected),active:state.active};
+}
 function record(){state.history.push(snapshot());if(state.history.length>70)state.history.shift();state.future=[];syncUndo();}
-function restore(v){state.pages=clone(v.pages);state.selected=v.selected;state.active=v.active;renderAll();}
+function restore(v){
+  const hits=new Map(state.pages.filter(p=>p.original!==null&&p.hits).map(p=>[p.original,p.hits]));
+  state.pages=clone(v.pages);
+  for(const page of state.pages)if(page.original!==null)page.hits=hits.get(page.original)||null;
+  state.selected=v.selected;state.active=v.active;renderAll();
+}
 function undo(){if(!state.history.length)return;state.future.push(snapshot());restore(state.history.pop());syncUndo();}
 function redo(){if(!state.future.length)return;state.history.push(snapshot());restore(state.future.pop());syncUndo();}
 function syncUndo(){$('undo').disabled=!state.history.length;$('redo').disabled=!state.future.length;}
