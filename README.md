@@ -13,6 +13,18 @@
 - Catalogue de nombreuses familles Windows, macOS et Linux (nom de police uniquement).
 - Ouverture par glisser-déposer, raccourcis clavier et interface responsive.
 
+## Langues
+
+L’interface est disponible en **français**, **anglais** et **vietnamien (Tiếng Việt)**.
+
+- Sélecteur de langue dans la barre supérieure ; changement immédiat sans recharger la page.
+- Détection de la langue préférée du navigateur (fr/en/vi, anglais par défaut pour les autres langues).
+- Choix mémorisé localement dans le navigateur, sans synchronisation distante.
+- Traductions des menus, infobulles, noms des outils, messages d’erreur, avertissements et panneaux d’aide.
+- Seule **l’interface** est traduite : le contenu de vos PDF et les textes saisis ne sont jamais traduits automatiquement.
+
+La cohérence des traductions et leurs paramètres dynamiques est vérifiée par `node tests/check-i18n.mjs` dans le workflow GitHub Actions.
+
 ## Limites importantes
 
 **Le remplacement de texte n'est pas une modification structurelle du PDF.** Il masque le texte d'origine et superpose un nouveau contenu, mais le texte original **reste extractible**. **Ne jamais s'en servir pour cacher des informations sensibles.** Aucun OCR, aucune signature électronique cryptographique, aucune garantie de conservation exacte sur tous les PDF (notamment PDF tournés ou rognés).
