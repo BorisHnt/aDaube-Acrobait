@@ -32,6 +32,7 @@ jobs:
           node --check --input-type=module < i18n.js
           node tests/check-i18n.mjs
           node tests/check-viewer.mjs
+          node tests/check-text-hits.mjs
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
