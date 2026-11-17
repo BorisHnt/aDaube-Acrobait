@@ -15,6 +15,11 @@ const state = {
   defaults:{family:'Helvetica',size:16,color:'#202124',bold:false,italic:false,underline:false,align:'left'}
 };
 let seed=0, notifyTimer=0, drag=null;
+// Large PDFs are only rasterized and text-indexed when their pages enter the viewport.
+let pageObserver=null, thumbObserver=null, pageRenderQueue=[], concurrentPageRenders=0;
+const visiblePageIndices=new Set(), activePdfTasks=new Map(), enqueuedPages=new Set();
+const pendingTextPages=new Map();
+const MAX_PDF_RENDERERS=2, MAX_CANVAS_PIXELS=12000000;
 const uid=()=> 'item-'+(++seed)+'-'+Date.now().toString(36);
 const clone=(v)=>JSON.parse(JSON.stringify(v));
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -139,21 +144,125 @@ function fillTextHits(index,layer){
     layer.append(h);
   }
 }
-async function drawBase(index,canvas){
-  const p=state.pages[index];if(p.original===null || !state.reader)return;
-  const generation=state.generation;
-  try{
-    const pdfpage=await state.reader.getPage(p.original+1);
-    if(generation!==state.generation)return;
-    const scale=state.zoom,ratio=Math.min(window.devicePixelRatio||1,2);
-    const viewport=pdfpage.getViewport({scale:scale*ratio});
-    canvas.width=Math.round(viewport.width);canvas.height=Math.round(viewport.height);
-    canvas.style.width=(p.w*scale)+'px';canvas.style.height=(p.h*scale)+'px';
-    const ctx=canvas.getContext('2d',{alpha:false});
-    await pdfpage.render({canvasContext:ctx,viewport,canvas}).promise;
-  }catch(error){console.error(error);status(t('Une page du PDF n’a pas pu être affichée.'));}
+function cancelPageRendering() {
+  pageObserver?.disconnect();pageObserver=null;
+  thumbObserver?.disconnect();thumbObserver=null;
+  for(const task of activePdfTasks.values()) {
+    try{task.cancel();}catch{ /* task already completed */ }
+  }
+  activePdfTasks.clear();pageRenderQueue=[];enqueuedPages.clear();visiblePageIndices.clear();
+}
+function queuePageRender(index,generation=state.generation) {
+  if(!state.reader||!state.pages[index]||state.pages[index].original===null||!visiblePageIndices.has(index))return;
+  if(enqueuedPages.has(index))return;
+  const card=document.querySelector('.page-card[data-index="'+index+'"]');
+  if(!card || card.dataset.rendered===String(generation))return;
+  enqueuedPages.add(index);
+  pageRenderQueue.push({index,generation});
+  processPageRenderQueue();
+}
+function processPageRenderQueue() {
+  while(concurrentPageRenders<MAX_PDF_RENDERERS && pageRenderQueue.length){
+    const job=pageRenderQueue.shift();
+    enqueuedPages.delete(job.index);
+    if(job.generation!==state.generation || !visiblePageIndices.has(job.index))continue;
+    const canvas=document.querySelector('.page-card[data-index="'+job.index+'"] canvas.pdf-background');
+    if(!canvas)continue;
+    concurrentPageRenders++;
+    drawBase(job.index,canvas,job.generation).finally(()=>{
+      concurrentPageRenders--;
+      processPageRenderQueue();
+    });
+  }
+}
+async function drawBase(index,canvas,generation) {
+  const spec=state.pages[index], reader=state.reader;
+  if(!spec||spec.original===null||!reader)return;
+  let task;
+  try {
+    const pdfpage=await reader.getPage(spec.original+1);
+    if(generation!==state.generation||!canvas.isConnected||!visiblePageIndices.has(index))return;
+    const logicalWidth=spec.w*state.zoom,logicalHeight=spec.h*state.zoom;
+    const pixelRatio=Math.max(.4,Math.min(window.devicePixelRatio||1,3,Math.sqrt(MAX_CANVAS_PIXELS/(logicalWidth*logicalHeight))));
+    const viewport=pdfpage.getViewport({scale:state.zoom*pixelRatio});
+    // Render off-screen then atomically swap, avoiding blurry intermediate frames.
+    const ready=document.createElement('canvas');
+    ready.className='pdf-background';
+    ready.width=Math.max(1,Math.ceil(viewport.width));
+    ready.height=Math.max(1,Math.ceil(viewport.height));
+    ready.style.width=logicalWidth+'px';
+    ready.style.height=logicalHeight+'px';
+    const ctx=ready.getContext('2d',{alpha:false});
+    task=pdfpage.render({canvasContext:ctx,viewport,canvas:ready});
+    activePdfTasks.set(index,task);
+    await task.promise;
+    if(generation!==state.generation||!canvas.isConnected||!visiblePageIndices.has(index))return;
+    canvas.replaceWith(ready);
+    document.querySelector('.page-card[data-index="'+index+'"]')?.setAttribute('data-rendered',String(generation));
+  }catch(error){
+    if(error?.name!=='RenderingCancelledException'){
+      console.error(error);
+      status(t('Une page du PDF n’a pas pu être affichée.'));
+    }
+  }finally{
+    if(activePdfTasks.get(index)===task)activePdfTasks.delete(index);
+  }
+}
+async function ensurePageText(index,generation=state.generation) {
+  const spec=state.pages[index],reader=state.reader;
+  if(!spec||spec.original===null||spec.hits!==null||!reader)return;
+  if(pendingTextPages.has(index))return pendingTextPages.get(index);
+  const promise=(async()=>{
+    try{
+      const pdfpage=await reader.getPage(spec.original+1);
+      const viewport=pdfpage.getViewport({scale:1});
+      const text=await pdfpage.getTextContent();
+      if(generation!==state.generation || state.pages[index]!==spec)return;
+      const hits=[];
+      for(const item of text.items){
+        if(!item.str||!item.transform)continue;
+        const matrix=pdfjs.Util.transform(viewport.transform,item.transform);
+        const height=Math.max(7,Math.hypot(matrix[2],matrix[3])||item.height||12);
+        const x=matrix[4],y=matrix[5]-height;
+        const width=Math.max(8,item.width||item.str.length*height*.45);
+        if(x+width>0&&y+height>0&&x<viewport.width&&y<viewport.height){
+          hits.push({text:item.str,x:Math.max(0,x),y:Math.max(0,y),
+            w:Math.max(1,Math.min(width,viewport.width-Math.max(0,x))),h:height});
+        }
+      }
+      spec.hits=hits;
+      if(visiblePageIndices.has(index)){
+        const layer=document.querySelector('.page-card[data-index="'+index+'"] .hit-layer');
+        if(layer)fillTextHits(index,layer);
+      }
+    }catch(error){console.warn('PDF text indexing failed',error);spec.hits=[];}
+    finally{pendingTextPages.delete(index);}
+  })();
+  pendingTextPages.set(index,promise);
+  return promise;
+}
+function loadVisiblePage(index) {
+  const card=document.querySelector('.page-card[data-index="'+index+'"]');
+  if(!card)return;
+  const layer=card.querySelector('.hit-layer');
+  if(state.pages[index]?.hits)fillTextHits(index,layer);
+  else ensurePageText(index);
+  queuePageRender(index);
+}
+function unloadPage(index){
+  const card=document.querySelector('.page-card[data-index="'+index+'"]');
+  card?.querySelector('.hit-layer')?.replaceChildren();
+  const task=activePdfTasks.get(index);
+  if(task){try{task.cancel();}catch{}activePdfTasks.delete(index);}
+  if(card){
+    card.dataset.rendered='';
+    // Release large bitmap buffers as pages move far out of view.
+    const canvas=card.querySelector('canvas.pdf-background');
+    if(canvas){canvas.width=1;canvas.height=1;}
+  }
 }
 function renderAll(){
+  cancelPageRendering();
   const counter=++state.generation;
   const visible=state.pages.length>0;
   $('empty-state').hidden=visible;$('pages').hidden=!visible;
@@ -165,10 +274,12 @@ function renderAll(){
     const paper=element('div','paper');paper.style.width=(p.w*state.zoom)+'px';paper.style.height=(p.h*state.zoom)+'px';
     paper.classList.toggle('text-mode',state.tool!=='select');
     const canvas=element('canvas','pdf-background');
-    const hitlayer=element('div','hit-layer');const layer=element('div','item-layer');
+    canvas.width=1;canvas.height=1;
+    canvas.style.width=(p.w*state.zoom)+'px';canvas.style.height=(p.h*state.zoom)+'px';
+    const hitlayer=element('div','hit-layer'),layer=element('div','item-layer');
     paper.append(canvas,hitlayer,layer);
     paper.addEventListener('click',(ev)=>{
-      if(ev.target!==paper && ev.target!==canvas)return;
+      if(ev.target!==paper&&ev.target!==canvas)return;
       state.active=index;
       if(state.tool==='select'){select(index,null);return;}
       const rect=paper.getBoundingClientRect();
@@ -176,36 +287,106 @@ function renderAll(){
       setTool('select');
     });
     card.append(number,paper);$('pages').append(card);
-    fillTextHits(index,hitlayer);renderItems(index);
-    if(p.original!==null)drawBase(index,canvas);
+    renderItems(index);
   }
-  syncSelection();renderThumbs(counter);
+  if(visible&&window.IntersectionObserver){
+    pageObserver=new IntersectionObserver(entries=>{
+      for(const entry of entries){
+        const index=Number(entry.target.dataset.index);
+        if(entry.isIntersecting){
+          visiblePageIndices.add(index);
+          loadVisiblePage(index);
+        }else if(visiblePageIndices.has(index)){
+          visiblePageIndices.delete(index);
+          unloadPage(index);
+        }
+      }
+    },{root:$('scroll-area'),rootMargin:'480px 350px',threshold:0});
+    document.querySelectorAll('.page-card').forEach(card=>pageObserver.observe(card));
+  }else if(visible){
+    for(let i=0;i<state.pages.length;i++){visiblePageIndices.add(i);loadVisiblePage(i);}
+  }
+  syncSelection();renderThumbs(true,counter);
 }
-async function renderThumbs(generation=state.generation){
-  const host=$('thumbnails');host.replaceChildren();
-  for(let index=0;index<state.pages.length;index++){
-    const p=state.pages[index];
-    const button=element('button','thumb');button.dataset.index=index;button.title=t('Aller à la page {n}',{n:index+1});
-    const paper=element('div','thumb-paper'), preview=element('canvas');
-    const label=element('span');label.textContent=t('Page {n}',{n:index+1});
-    paper.append(preview);button.append(paper,label);
-    button.addEventListener('click',()=>{select(index,null);document.querySelector('.page-card[data-index="'+index+'"]')?.scrollIntoView({block:'center'});});
-    host.append(button);
-    const sc=Math.min(91/p.w,118/p.h);
-    preview.width=Math.max(1,Math.floor(p.w*sc));preview.height=Math.max(1,Math.floor(p.h*sc));
-    const ctx=preview.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,preview.width,preview.height);
-    if(p.original!==null && state.reader){
-      try{const base=await state.reader.getPage(p.original+1);if(generation!==state.generation)return;await base.render({canvasContext:ctx,viewport:base.getViewport({scale:sc}),canvas:preview}).promise;}
-      catch(error){console.warn('Miniature',error);}
+async function drawThumb(index,button,generation){
+  const spec=state.pages[index],canvas=button.querySelector('canvas');
+  if(!spec||!canvas||button.dataset.working==='1'){
+    if(button)button.dataset.dirty='1';
+    return;
+  }
+  button.dataset.working='1';button.dataset.dirty='0';
+  const scale=Math.min(91/spec.w,118/spec.h);
+  const ratio=Math.min(window.devicePixelRatio||1,2);
+  const factor=scale*ratio;
+  const w=Math.max(1,Math.floor(spec.w*factor)),h=Math.max(1,Math.floor(spec.h*factor));
+  try{
+    const backing=document.createElement('canvas');backing.width=w;backing.height=h;
+    const ctx=backing.getContext('2d',{alpha:false});
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);
+    if(spec.original!==null&&state.reader){
+      const pdfpage=await state.reader.getPage(spec.original+1);
+      if(generation!==state.generation||!button.isConnected||button.dataset.visible!=='1')return;
+      await pdfpage.render({canvasContext:ctx,viewport:pdfpage.getViewport({scale:factor}),canvas:backing}).promise;
     }
-    if(generation!==state.generation)return;
-    for(const item of p.items){
-      ctx.save();ctx.globalAlpha=item.kind==='highlight'?.3:1;
-      if(item.replace){ctx.fillStyle='#fff';ctx.fillRect(item.x*sc,item.y*sc,item.w*sc,item.h*sc);}
-      if(item.kind==='text'){ctx.fillStyle=item.color;ctx.font=(item.bold?'bold ':'')+Math.max(2,item.size*sc)+'px Arial';ctx.fillText((item.content||'').split('\n')[0].slice(0,65),item.x*sc,item.y*sc+item.size*sc);}
-      else{ctx.fillStyle=item.color;ctx.fillRect(item.x*sc,item.y*sc,item.w*sc,item.h*sc);}
+    if(generation!==state.generation||!button.isConnected||button.dataset.visible!=='1')return;
+    for(const o of spec.items){
+      ctx.save();
+      ctx.globalAlpha=o.kind==='highlight'?.3:1;
+      if(o.replace){ctx.fillStyle='#fff';ctx.fillRect(o.x*factor,o.y*factor,o.w*factor,o.h*factor);}
+      if(o.kind==='text'){
+        ctx.fillStyle=o.color;ctx.font=(o.bold?'bold ':'')+Math.max(2,o.size*factor)+'px Arial';
+        ctx.fillText((o.content||'').split('\n')[0].slice(0,65),o.x*factor,o.y*factor+o.size*factor);
+      }else{ctx.fillStyle=o.color;ctx.fillRect(o.x*factor,o.y*factor,o.w*factor,o.h*factor);}
       ctx.restore();
     }
+    canvas.width=w;canvas.height=h;
+    canvas.style.width=spec.w*scale+'px';canvas.style.height=spec.h*scale+'px';
+    canvas.getContext('2d').drawImage(backing,0,0);
+    button.dataset.rendered='1';
+  }catch(error){
+    if(error?.name!=='RenderingCancelledException')console.warn('PDF thumbnail failed',error);
+  }finally{
+    button.dataset.working='0';
+    if(button.dataset.dirty==='1'&&button.dataset.visible==='1'&&generation===state.generation)drawThumb(index,button,generation);
+  }
+}
+function renderThumbs(force=false,generation=state.generation){
+  const host=$('thumbnails');
+  if(!force&&host.children.length===state.pages.length){
+    for(const button of host.children){
+      if(button.dataset.visible==='1')drawThumb(Number(button.dataset.index),button,generation);
+    }
+    return;
+  }
+  thumbObserver?.disconnect();
+  host.replaceChildren();
+  for(let index=0;index<state.pages.length;index++){
+    const button=element('button','thumb');
+    button.dataset.index=index;button.dataset.visible='0';
+    button.title=t('Aller à la page {n}',{n:index+1});
+    const paper=element('div','thumb-paper'),preview=element('canvas');
+    preview.width=1;preview.height=1;
+    const label=element('span');label.textContent=t('Page {n}',{n:index+1});
+    paper.append(preview);button.append(paper,label);
+    button.addEventListener('click',()=>{
+      select(index,null);
+      document.querySelector('.page-card[data-index="'+index+'"]')?.scrollIntoView({block:'center'});
+      $('sidebar').classList.remove('mobile-open');
+    });
+    host.append(button);
+  }
+  if(window.IntersectionObserver){
+    thumbObserver=new IntersectionObserver(entries=>{
+      for(const entry of entries){
+        const button=entry.target,index=Number(button.dataset.index);
+        button.dataset.visible=entry.isIntersecting?'1':'0';
+        if(entry.isIntersecting)drawThumb(index,button,generation);
+        else{button.dataset.rendered='0';const preview=button.querySelector('canvas');if(preview){preview.width=1;preview.height=1;}}
+      }
+    },{root:host,rootMargin:'200px 0px',threshold:0});
+    [...host.children].forEach(button=>thumbObserver.observe(button));
+  }else{
+    [...host.children].forEach(button=>{button.dataset.visible='1';drawThumb(Number(button.dataset.index),button,generation);});
   }
   syncSelection();
 }
@@ -218,17 +399,10 @@ async function openPDF(file){
     const doc=await pdfjs.getDocument({data:bytes.slice()}).promise;
     const pages=[];
     for(let i=0;i<doc.numPages;i++){
-      const page=await doc.getPage(i+1),vp=page.getViewport({scale:1}),text=await page.getTextContent();
-      const hits=[];
-      for(const item of text.items){
-        if(!item.str || !item.transform)continue;
-        const matrix=pdfjs.Util.transform(vp.transform,item.transform);
-        const height=Math.max(7,Math.hypot(matrix[2],matrix[3])||item.height||12);
-        const x=matrix[4],y=matrix[5]-height;
-        const width=Math.max(8,(item.width||item.str.length*height*.45));
-        if(x+width>0 && y+height>0 && x<vp.width && y<vp.height)hits.push({text:item.str,x:Math.max(0,x),y:Math.max(0,y),w:Math.min(width,vp.width-Math.max(0,x)),h:height});
-      }
-      pages.push({w:vp.width,h:vp.height,original:i,hits,items:[]});
+      const page=await doc.getPage(i+1),vp=page.getViewport({scale:1});
+      pages.push({w:vp.width,h:vp.height,original:i,hits:null,items:[]});
+      // Give the browser room to respond to user interactions on large documents.
+      if(i%12===11)await new Promise(resolve=>setTimeout(resolve,0));
     }
     state.reader=doc;state.source=bytes;state.pages=pages;state.active=0;state.selected=null;
     state.history=[];state.future=[];syncUndo();
