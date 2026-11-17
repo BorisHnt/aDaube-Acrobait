@@ -200,7 +200,7 @@ async function drawBase(index,canvas,version) {
   let task;
   try {
     const pdfpage=await reader.getPage(spec.original+1);
-    if(version!==state.version||!canvas.isConnected||!visiblePageIndices.has(index))return;
+    if(version!==state.rasterVersion||!canvas.isConnected||!visiblePageIndices.has(index))return;
     const logicalWidth=spec.w*state.zoom,logicalHeight=spec.h*state.zoom;
     const pixelRatio=Math.max(.1,Math.min(window.devicePixelRatio||1,3,Math.sqrt(MAX_CANVAS_PIXELS/(logicalWidth*logicalHeight))));
     const viewport=pdfpage.getViewport({scale:state.zoom*pixelRatio});
@@ -215,7 +215,7 @@ async function drawBase(index,canvas,version) {
     task=pdfpage.render({canvasContext:ctx,viewport,canvas:ready});
     activePdfTasks.set(index,task);
     await task.promise;
-    if(version!==state.version||!canvas.isConnected||!visiblePageIndices.has(index))return;
+    if(version!==state.rasterVersion||!canvas.isConnected||!visiblePageIndices.has(index))return;
     canvas.replaceWith(ready);
     ready.parentElement?.classList.remove('loading');
     const card=document.querySelector('.page-card[data-index="'+index+'"]');
