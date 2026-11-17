@@ -232,14 +232,14 @@ async function openPDF(file){
     state.reader=doc;state.source=bytes;state.pages=pages;state.active=0;state.selected=null;
     state.history=[];state.future=[];syncUndo();
     $('filename').value=file.name.replace(/\.pdf$/i,'');
-    renderAll();status('PDF chargé : '+pages.length+' page(s).');
+    renderAll();if(window.innerWidth<800)fitWidth();status('PDF chargé : '+pages.length+' page(s).');
     toast('PDF ouvert. Cliquez sur un texte pour créer une correction visuelle.');
   }catch(error){console.error(error);status('Ouverture impossible : '+error.message);toast('Impossible de lire ce PDF : '+error.message,6000);}
 }
 function newDocument(){
   state.reader=null;state.source=null;state.pages=[{w:595.28,h:841.89,original:null,hits:[],items:[]}];
   state.active=0;state.selected=null;state.history=[];state.future=[];syncUndo();
-  $('filename').value='Sans titre';renderAll();status('Nouveau document A4.');
+  $('filename').value='Sans titre';renderAll();if(window.innerWidth<800)fitWidth();status('Nouveau document A4.');
 }
 function appendPage(){
   if(!state.pages.length)return newDocument();
