@@ -25,6 +25,20 @@ L’interface est disponible en **français**, **anglais** et **vietnamien (Ti�
 
 La cohérence des traductions et leurs paramètres dynamiques est vérifiée par `node tests/check-i18n.mjs` dans le workflow GitHub Actions.
 
+## Affichage, zoom et performances
+
+- **Zoom** de 30 % à 400 %, avec les modes **ajuster à la largeur** et **page entière**.
+- Sur mobile : barre de zoom accessible en bas de l’écran, accès aux miniatures et aux propriétés ; pincement à deux doigts et double appui pour agrandir.
+- Sur ordinateur : `Ctrl` + molette de souris pour zoomer autour du pointeur ; double-clic sur une zone vide du PDF.
+- Le zoom conserve autant que possible la position de lecture et permet le défilement horizontal des pages agrandies.
+- PDF.js utilise un rendu haute définition tenant compte de la densité de pixels de l’appareil, avec une limite de 12 mégapixels par canevas pour éviter la saturation mémoire.
+- Les pages, miniatures et zones de sélection de texte sont chargées **progressivement lorsqu’elles approchent de l’écran**. Les canevas éloignés sont libérés pour limiter les ralentissements.
+- L’ouverture des documents volumineux affiche une progression ; un indicateur discret apparaît tant qu’une page visible est en cours de rendu.
+
+**Limite de netteté :** un PDF qui contient déjà une photographie ou une image très compressée ne peut pas retrouver des détails absents. La haute définition améliore surtout le rendu de la page et des textes vectoriels.
+
+**Vérification :** `node tests/check-i18n.mjs` et `node tests/check-viewer.mjs` vérifient les traductions et les principaux garde-fous du visualiseur. Pour les performances réelles et les gestes tactiles, un test dans Chrome/Firefox avec le PDF concerné reste nécessaire.
+
 ## Limites importantes
 
 **Le remplacement de texte n'est pas une modification structurelle du PDF.** Il masque le texte d'origine et superpose un nouveau contenu, mais le texte original **reste extractible**. **Ne jamais s'en servir pour cacher des informations sensibles.** Aucun OCR, aucune signature électronique cryptographique, aucune garantie de conservation exacte sur tous les PDF (notamment PDF tournés ou rognés).
