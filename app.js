@@ -1,5 +1,6 @@
 import * as pdfjs from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
 import {t, translateInterface, setLanguage, onLanguageChange} from './i18n.js';
+import {buildTextHitIndex,pickTextHit} from './text-hit-index.js';
 pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
 
 const $ = (id) => document.getElementById(id);
@@ -19,6 +20,7 @@ let seed=0, notifyTimer=0, drag=null;
 let pageObserver=null, thumbObserver=null, pageRenderQueue=[], concurrentPageRenders=0;
 const visiblePageIndices=new Set(), activePdfTasks=new Map(), enqueuedPages=new Set(), renderingPages=new Set();
 const pendingTextPages=new Map();
+const textHitIndices=new WeakMap();
 const MAX_PDF_RENDERERS=2, MAX_CANVAS_PIXELS=9000000;
 const uid=()=> 'item-'+(++seed)+'-'+Date.now().toString(36);
 const clone=(v)=>JSON.parse(JSON.stringify(v));
@@ -134,25 +136,36 @@ function renderItems(index,skipSelectionSync=false){
   }
   if(!skipSelectionSync)syncSelection();
 }
+function hitForPoint(index,px,py){
+  const page=state.pages[index];
+  if(!page?.hits?.length)return null;
+  let spatial=textHitIndices.get(page);
+  if(!spatial){spatial=buildTextHitIndex(page.hits);textHitIndices.set(page,spatial);}
+  return pickTextHit(spatial,px,py,Math.max(1.5,2/state.zoom));
+}
 function fillTextHits(index,layer){
-  const page=state.pages[index];layer.replaceChildren();
-  if(!page.hits)return;
-  const scale=state.zoom;
-  for(const hit of page.hits){
-    if(!hit.text.trim())continue;
-    const h=element('button','pdf-text-hit');h.type='button';
-    h.style.left=(hit.x*scale)+'px';h.style.top=(hit.y*scale)+'px';
-    h.style.width=(hit.w*scale)+'px';h.style.height=(hit.h*scale)+'px';
-    h.title=t('Remplacer visuellement : {text}',{text:hit.text.slice(0,85)});
-    h.setAttribute('aria-label',t('Remplacer {text}',{text:hit.text.slice(0,65)}));
-    h.addEventListener('click',(ev)=>{
-      ev.preventDefault();ev.stopPropagation();
-      if(state.tool!=='select')return;
-      const obj=add(index,'text',hit.x,hit.y,{w:Math.max(30,hit.w+12),h:Math.max(20,hit.h*1.45),content:hit.text,size:Math.max(8,hit.h*.9),replace:true});
-      if(obj)toast(t('Correction visuelle : le texte d’origine demeure dans le PDF et reste extractible.'));
-    });
-    layer.append(h);
+  layer.replaceChildren();
+  if(!state.pages[index]?.hits?.length)return;
+  // One hover indicator per page instead of one clickable button per word.
+  const hover=element('div','pdf-hit-hover');
+  hover.hidden=true;hover.setAttribute('aria-hidden','true');
+  layer.append(hover);
+}
+function showTextHover(index,paper,layer,ev){
+  const hover=layer.firstElementChild;
+  if(!hover||state.tool!=='select'||ev.pointerType==='touch'||ev.target.closest('.item')){
+    if(hover)hover.hidden=true;
+    return;
   }
+  const rect=paper.getBoundingClientRect();
+  const hit=hitForPoint(index,(ev.clientX-rect.left)/state.zoom,(ev.clientY-rect.top)/state.zoom);
+  if(!hit){hover.hidden=true;paper.style.cursor='';return;}
+  hover.hidden=false;
+  hover.style.left=hit.x*state.zoom+'px';
+  hover.style.top=hit.y*state.zoom+'px';
+  hover.style.width=hit.w*state.zoom+'px';
+  hover.style.height=hit.h*state.zoom+'px';
+  paper.style.cursor='text';
 }
 function stopRasterJobs() {
   for(const task of activePdfTasks.values()){
@@ -266,6 +279,7 @@ async function ensurePageText(index,generation=state.generation) {
         }
       }
       spec.hits=hits;
+      textHitIndices.delete(spec);
       if(visiblePageIndices.has(index)){
         const layer=document.querySelector('.page-card[data-index="'+index+'"] .hit-layer');
         if(layer)fillTextHits(index,layer);
@@ -317,12 +331,28 @@ function renderAll(){
     const hitlayer=element('div','hit-layer'),layer=element('div','item-layer');
     paper.append(canvas,hitlayer,layer);
     paper.addEventListener('click',(ev)=>{
-      if(ev.target!==paper&&ev.target!==canvas)return;
+      // The original placeholder canvas is replaced after PDF.js has rendered.
+      // Match the *current* canvas, not its stale closure reference.
+      if(ev.target!==paper&&!ev.target.classList?.contains('pdf-background'))return;
       state.active=index;
-      if(state.tool==='select'){select(index,null);return;}
       const rect=paper.getBoundingClientRect();
-      add(index,state.tool,(ev.clientX-rect.left)/state.zoom,(ev.clientY-rect.top)/state.zoom);
+      const x=(ev.clientX-rect.left)/state.zoom,y=(ev.clientY-rect.top)/state.zoom;
+      if(state.tool==='select'){
+        const hit=hitForPoint(index,x,y);
+        if(hit){
+          const obj=add(index,'text',hit.x,hit.y,{w:Math.max(30,hit.w+12),h:Math.max(20,hit.h*1.45),content:hit.text,size:Math.max(8,hit.h*.9),replace:true});
+          if(obj)toast(t('Correction visuelle : le texte d’origine demeure dans le PDF et reste extractible.'));
+        }else select(index,null);
+        return;
+      }
+      add(index,state.tool,x,y);
       setTool('select');
+    });
+    paper.addEventListener('pointermove',ev=>showTextHover(index,paper,hitlayer,ev));
+    paper.addEventListener('pointerleave',()=>{
+      const hover=hitlayer.firstElementChild;
+      if(hover)hover.hidden=true;
+      paper.style.cursor='';
     });
     card.append(number,paper);$('pages').append(card);
     renderItems(index,true);
