@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f8fb">
+  <meta name="description" content="aDaube Acrobait — éditeur PDF gratuit, local et sans compte.">
+  <title>aDaube Acrobait — éditeur PDF</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0,0" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">a</span><span>aDaube <strong>Acrobait</strong></span><span class="version">BÊTA</span></div>
+      <div class="doc-title"><span class="mi">description</span><input id="filename" aria-label="Nom du document" value="Sans titre" maxlength="120"><span id="save-indicator" class="subtle">Local uniquement</span></div>
+      <div class="header-actions"><button id="open-top" class="button subtle-button"><span class="mi">folder_open</span><span class="hide-mobile">Ouvrir</span></button><button id="export-top" class="button primary"><span class="mi">download</span><span>Exporter le PDF</span></button></div>
+    </header>
+
+    <nav class="menubar" aria-label="Menu principal">
+      <details class="menu"><summary>Fichier</summary><div class="dropdown">
+        <button data-action="new">Nouveau document <kbd>Ctrl N</kbd></button>
+        <button data-action="open">Ouvrir un PDF <kbd>Ctrl O</kbd></button>
+        <button data-action="export">Exporter en PDF <kbd>Ctrl S</kbd></button>
+        <button data-action="font-import">Importer une police</button>
+      </div></details>
+      <details class="menu"><summary>Édition</summary><div class="dropdown">
+        <button data-action="undo">Annuler <kbd>Ctrl Z</kbd></button>
+        <button data-action="redo">Rétablir <kbd>Ctrl Maj Z</kbd></button>
+        <button data-action="duplicate">Dupliquer l'élément</button>
+        <button data-action="delete">Supprimer l'élément</button>
+      </div></details>
+      <details class="menu"><summary>Affichage</summary><div class="dropdown">
+        <button data-action="zoom-out">Zoom arrière</button><button data-action="zoom-in">Zoom avant</button>
+        <button data-action="fit">Ajuster à la largeur</button><button data-action="toggle-sidebar">Afficher / masquer les pages</button>
+      </div></details>
+      <details class="menu"><summary>Insertion</summary><div class="dropdown">
+        <button data-action="insert-text">Zone de texte</button>
+        <button data-action="insert-rect">Rectangle</button>
+        <button data-action="insert-highlight">Surligneur</button>
+        <button data-action="add-page">Nouvelle page blanche</button>
+      </div></details>
+      <details class="menu"><summary>Format</summary><div class="dropdown">
+        <button data-action="bold">Gras <kbd>Ctrl B</kbd></button>
+        <button data-action="italic">Italique <kbd>Ctrl I</kbd></button>
+        <button data-action="underline">Souligné <kbd>Ctrl U</kbd></button>
+        <button data-action="align-left">Aligner à gauche</button>
+        <button data-action="align-center">Centrer</button>
+        <button data-action="align-right">Aligner à droite</button>
+      </div></details>
+      <details class="menu"><summary>Outils</summary><div class="dropdown">
+        <button data-action="font-import">Importer TTF / OTF</button>
+        <button data-action="help">Compatibilité et limites</button>
+      </div></details>
+      <details class="menu"><summary>Aide</summary><div class="dropdown"><button data-action="help">Guide de démarrage</button><a href="https://github.com/BorisHnt/aDaube-Acrobait" target="_blank" rel="noopener">Code source GitHub</a></div></details>
+      <span class="menu-spacer"></span>
+      <span class="privacy"><span class="mi">lock</span> Documents traités localement</span>
+    </nav>
+
+    <div class="toolbar" aria-label="Outils de document">
+      <div class="tool-section">
+        <button id="undo" class="tool-button" title="Annuler (Ctrl+Z)"><span class="mi">undo</span></button>
+        <button id="redo" class="tool-button" title="Rétablir"><span class="mi">redo</span></button>
+        <span class="separator"></span>
+        <button id="tool-select" class="tool-button active" title="Sélectionner ou remplacer du texte"><span class="mi">near_me</span></button>
+        <button id="tool-text" class="tool-button" title="Ajouter du texte"><span class="mi">title</span></button>
+        <button id="tool-rect" class="tool-button" title="Ajouter un rectangle"><span class="mi">rectangle</span></button>
+        <button id="tool-highlight" class="tool-button" title="Surligner"><span class="mi">ink_highlighter</span></button>
+      </div>
+      <div class="tool-section grow-tools">
+        <label class="sr-only" for="font-family">Police</label>
+        <select id="font-family" title="Police de caractères" aria-label="Police de caractères"></select>
+        <label class="sr-only" for="font-size">Taille de la police</label>
+        <input id="font-size" class="size-input" type="number" min="6" max="144" step="1" value="16" aria-label="Taille de police">
+        <button id="bold" class="tool-button typography" title="Gras">B</button>
+        <button id="italic" class="tool-button typography italic" title="Italique">I</button>
+        <button id="underline" class="tool-button typography underlined" title="Souligné">U</button>
+        <span class="separator"></span>
+        <button id="align-left" class="tool-button active" title="Aligner à gauche"><span class="mi">format_align_left</span></button>
+        <button id="align-center" class="tool-button" title="Centrer"><span class="mi">format_align_center</span></button>
+        <button id="align-right" class="tool-button" title="Aligner à droite"><span class="mi">format_align_right</span></button>
+        <label class="color-tool" title="Couleur du texte ou de la forme"><span class="mi">format_color_text</span><input id="font-color" type="color" value="#202124" aria-label="Couleur"></label>
+      </div>
+      <div class="tool-section">
+        <button id="zoom-out" class="tool-button" title="Réduire"><span class="mi">remove</span></button>
+        <select id="zoom" title="Zoom" aria-label="Zoom">
+          <option value=".5">50 %</option><option value=".75">75 %</option><option value="1" selected>100 %</option><option value="1.25">125 %</option><option value="1.5">150 %</option><option value="2">200 %</option>
+        </select>
+        <button id="zoom-in" class="tool-button" title="Agrandir"><span class="mi">add</span></button>
+      </div>
+    </div>
+
+    <main class="workspace">
+      <aside id="sidebar" class="sidebar" aria-label="Pages du document">
+        <div class="sidebar-header"><strong>Pages</strong><button id="add-page" class="tool-button" title="Ajouter une page"><span class="mi">add</span></button></div>
+        <div id="thumbnails" class="thumbnails"></div>
+        <div class="sidebar-footer"><button id="remove-page" class="small-button"><span class="mi">delete_outline</span> Supprimer la page</button></div>
+      </aside>
+      <div id="scroll-area" class="scroll-area">
+        <div id="empty-state" class="empty-state">
+          <div class="empty-illustration"><span class="mi">edit_document</span></div>
+          <h1>Vos PDF, vos règles.</h1>
+          <p>Ouvrez un PDF pour ajouter du texte, corriger un passage, annoter et exporter. Sans abonnement et sans transfert de vos fichiers.</p>
+          <div class="empty-actions"><button id="open-empty" class="button primary large"><span class="mi">upload_file</span> Ouvrir un PDF</button><button id="new-empty" class="button secondary large"><span class="mi">note_add</span> Page blanche</button></div>
+          <div class="drop-hint">Ou glissez-déposez votre PDF ici</div>
+        </div>
+        <div id="pages" class="pages" aria-label="Document PDF" hidden></div>
+      </div>
+      <aside id="inspector" class="inspector" aria-label="Propriétés">
+        <div class="inspector-heading"><span>Propriétés</span><button id="hide-inspector" class="icon-close" title="Fermer les propriétés"><span class="mi">close</span></button></div>
+        <div id="no-selection" class="inspector-empty"><span class="mi">touch_app</span><p>Sélectionnez une zone de texte ou une forme pour modifier ses propriétés.</p><small>Astuce : cliquez sur le texte d'un PDF pour le recouvrir et le remplacer.</small></div>
+        <div id="selection-properties" hidden>
+          <div class="field-group"><label for="object-content">Contenu</label><textarea id="object-content" rows="4" spellcheck="true"></textarea></div>
+          <div class="field-grid"><div class="field-group"><label for="object-x">X</label><input id="object-x" type="number" min="0"></div><div class="field-group"><label for="object-y">Y</label><input id="object-y" type="number" min="0"></div><div class="field-group"><label for="object-width">Largeur</label><input id="object-width" type="number" min="8"></div><div class="field-group"><label for="object-height">Hauteur</label><input id="object-height" type="number" min="8"></div></div>
+          <button id="duplicate-object" class="small-button full"><span class="mi">content_copy</span> Dupliquer</button>
+          <button id="delete-object" class="small-button full dangerous"><span class="mi">delete</span> Supprimer</button>
+        </div>
+        <div class="inspector-tip"><span class="mi">info</span><span id="font-warning">Les polices non incorporées sont remplacées à l'export. Importez leur fichier TTF/OTF pour les intégrer.</span></div>
+      </aside>
+    </main>
+    <footer class="statusbar"><span id="status">Prêt</span><span class="status-spacer"></span><span id="page-status">Aucun document</span><span id="zoom-status">100 %</span></footer>
+  </div>
+
+  <input id="pdf-picker" type="file" accept="application/pdf,.pdf" hidden>
+  <input id="font-picker" type="file" accept=".ttf,.otf,font/ttf,font/otf" hidden multiple>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="help-dialog"><div class="dialog-heading"><h2>À propos d'aDaube Acrobait</h2><button id="help-close" class="icon-close"><span class="mi">close</span></button></div>
+    <p><strong>Remplacer le texte :</strong> cliquez sur un morceau de texte dans votre PDF. L'éditeur le recouvre visuellement puis ajoute votre version par-dessus. Le texte original reste techniquement présent dans le fichier : ce n'est pas un outil de caviardage sécurisé.</p>
+    <p><strong>Polices :</strong> le catalogue inclut des noms de polices Microsoft, Apple et libres. Une police doit être disponible sur votre appareil pour être affichée correctement. Pour garantir son rendu dans le PDF exporté, importez un fichier TTF/OTF que vous avez le droit d'utiliser.</p>
+    <p><strong>Limites :</strong> conservation visuelle approximative des textes remplacés, pas de modification native des objets PDF, ni d'OCR, ni de signature numérique. Les documents et les polices restent dans la session du navigateur. Les bibliothèques PDF.js, pdf-lib et les icônes sont chargées depuis des CDN au premier usage.</p>
+    <button id="help-ok" class="button primary">Compris</button></dialog>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
