@@ -184,7 +184,7 @@ async function drawBase(index,canvas,generation) {
     const pdfpage=await reader.getPage(spec.original+1);
     if(generation!==state.generation||!canvas.isConnected||!visiblePageIndices.has(index))return;
     const logicalWidth=spec.w*state.zoom,logicalHeight=spec.h*state.zoom;
-    const pixelRatio=Math.max(.4,Math.min(window.devicePixelRatio||1,3,Math.sqrt(MAX_CANVAS_PIXELS/(logicalWidth*logicalHeight))));
+    const pixelRatio=Math.max(.1,Math.min(window.devicePixelRatio||1,3,Math.sqrt(MAX_CANVAS_PIXELS/(logicalWidth*logicalHeight))));
     const viewport=pdfpage.getViewport({scale:state.zoom*pixelRatio});
     // Render off-screen then atomically swap, avoiding blurry intermediate frames.
     const ready=document.createElement('canvas');
@@ -408,14 +408,21 @@ async function openPDF(file){
     state.reader=doc;state.source=bytes;state.pages=pages;state.active=0;state.selected=null;
     state.history=[];state.future=[];syncUndo();
     $('filename').value=file.name.replace(/\.pdf$/i,'');
-    renderAll();if(window.innerWidth<800)fitWidth();status(t('PDF chargé : {n} page(s).',{n:pages.length}));
+    $('scroll-area').scrollTo({left:0,top:0,behavior:'instant'});
+    renderAll();if(window.innerWidth<800)fitWidth();
+    $('scroll-area').scrollTo({left:0,top:0,behavior:'instant'});
+    status(t('PDF chargé : {n} page(s).',{n:pages.length}));
     toast(t('PDF ouvert. Cliquez sur un texte pour créer une correction visuelle.'));
   }catch(error){console.error(error);status(t('Ouverture impossible : {error}',{error:error.message}));toast(t('Impossible de lire ce PDF : {error}',{error:error.message}),6000);}
 }
 function newDocument(){
   state.reader=null;state.source=null;state.pages=[{w:595.28,h:841.89,original:null,hits:[],items:[]}];
   state.active=0;state.selected=null;state.history=[];state.future=[];syncUndo();
-  $('filename').value=t('Sans titre');renderAll();if(window.innerWidth<800)fitWidth();status(t('Nouveau document A4.'));
+  $('filename').value=t('Sans titre');
+  $('scroll-area').scrollTo({left:0,top:0,behavior:'instant'});
+  renderAll();if(window.innerWidth<800)fitWidth();
+  $('scroll-area').scrollTo({left:0,top:0,behavior:'instant'});
+  status(t('Nouveau document A4.'));
 }
 function appendPage(){
   if(!state.pages.length)return newDocument();
@@ -449,8 +456,12 @@ function restoreZoomAnchor(anchor) {
   const rect=$('pages').querySelector('.page-card[data-index="'+anchor.index+'"] .paper')?.getBoundingClientRect();
   if(!rect)return;
   const area=$('scroll-area');
+  // Temporarily bypass smooth scrolling to keep the zoom's focal point stable.
+  const oldBehavior=area.style.scrollBehavior;
+  area.style.scrollBehavior='auto';
   area.scrollLeft+=rect.left+anchor.x*state.zoom-anchor.clientX;
   area.scrollTop+=rect.top+anchor.y*state.zoom-anchor.clientY;
+  requestAnimationFrame(()=>{area.style.scrollBehavior=oldBehavior;});
 }
 function setZoom(value,position){
   const p=state.pages[state.active]||state.pages[0];
