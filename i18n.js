@@ -126,13 +126,19 @@ const rows = [
   ["Police « {name} » importée : sera incorporée à l’export.","Font “{name}” imported: it will be embedded on export.","Đã nhập phông chữ “{name}”: sẽ được nhúng khi xuất."],
   ["Impossible de charger la police : {name}","Cannot load font: {name}","Không thể tải phông chữ: {name}"],
   ["Prêt — ouvrez un PDF ou créez une page blanche.","Ready — open a PDF or create a blank page.","Sẵn sàng — mở PDF hoặc tạo trang trắng."],
-  ["Langue de l’interface mise à jour.","Interface language updated.","Đã thay đổi ngôn ngữ giao diện."]
+  ["Langue de l’interface mise à jour.","Interface language updated.","Đã thay đổi ngôn ngữ giao diện."],
+  ["Page entière","Fit page","Vừa trang"],
+  ["Affichage et zoom","View and zoom","Hiển thị và thu phóng"],
+  ["Taille réelle","Actual size","Kích thước thực"],
+  ["Ajuster","Fit","Vừa khổ"],
+  ["Zoom et lecture :","Zoom and reading:","Thu phóng và đọc:"],
+  ["sur mobile, utilisez la barre en bas pour ajuster la largeur, revenir à 100 % ou ouvrir les pages et les propriétés. Écartez ou rapprochez deux doigts pour zoomer ; un double appui agrandit le document. Sur ordinateur, maintenez Ctrl et faites défiler la molette.","on mobile, use the bottom bar to fit the page width, return to 100%, or open pages and properties. Pinch with two fingers to zoom; double-tap to enlarge. On desktop, hold Ctrl and scroll the mouse wheel.","trên điện thoại, dùng thanh công cụ phía dưới để vừa chiều rộng trang, trở về 100% hoặc mở danh sách trang và thuộc tính. Chụm hoặc mở hai ngón tay để thu phóng; chạm hai lần để phóng to. Trên máy tính, giữ Ctrl và cuộn chuột."]
 ];
 const dictionaries = Object.fromEntries(rows.map(([fr,en,vi]) => [fr,{fr,en,vi}]));
 const languages = ["fr","en","vi"];
 const originals = new WeakMap();
 const originalAttributes = new WeakMap();
-const roots = ".header,.menubar,.toolbar,.sidebar,.empty-state,.inspector,.statusbar,#help-dialog";
+const roots = ".header,.menubar,.toolbar,.sidebar,.empty-state,.inspector,.mobile-zoom-bar,.statusbar,#help-dialog";
 
 function initialLanguage() {
   let saved = null;
