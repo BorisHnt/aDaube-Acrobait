@@ -29,6 +29,8 @@ jobs:
           test -s styles.css
           test -s app.js
           node --check --input-type=module < app.js
+          node --check --input-type=module < i18n.js
+          node tests/check-i18n.mjs
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
