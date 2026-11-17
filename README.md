@@ -1,0 +1,54 @@
+# aDaube Acrobait
+
+Éditeur de PDF gratuit, sans compte ni serveur de traitement de documents, avec une interface de logiciel bureautique. **100 % JavaScript vanilla** pour le code applicatif et déploiement statique sur GitHub Pages.
+
+## Fonctionnalités — bêta
+
+- Ouverture, aperçu, zoom et navigation dans des PDF grâce à PDF.js.
+- Clic sur un texte existant pour créer une **correction visuelle** : recouvrement blanc et insertion d'un texte modifiable.
+- Insertion de zones de texte, rectangles et surlignages ; déplacement des éléments.
+- Mise en forme : polices, tailles, couleurs, gras, italique, souligné, alignement.
+- Ajout et suppression de pages, duplication et suppression de blocs, annulation et rétablissement.
+- Export PDF via pdf-lib et intégration des polices TTF/OTF importées.
+- Catalogue de nombreuses familles Windows, macOS et Linux (nom de police uniquement).
+- Ouverture par glisser-déposer, raccourcis clavier et interface responsive.
+
+## Limites importantes
+
+**Le remplacement de texte n'est pas une modification structurelle du PDF.** Il masque le texte d'origine et superpose un nouveau contenu, mais le texte original **reste extractible**. **Ne jamais s'en servir pour cacher des informations sensibles.** Aucun OCR, aucune signature électronique cryptographique, aucune garantie de conservation exacte sur tous les PDF (notamment PDF tournés ou rognés).
+
+**La liste des polices n'est pas un pack distribué** : l'affichage utilise les polices installées sur le système ou des alternatives ; l'export utilise les polices PDF standard ou les TTF/OTF importées dans la session. Pour conserver fidèlement une police dans le PDF exporté, importez son fichier TTF/OTF et assurez-vous d'avoir les droits d'utilisation. Les polices Microsoft et Apple ne sont pas redistribuées dans ce dépôt.
+
+Les fichiers PDF sélectionnés sont traités dans le navigateur par l'application. Les bibliothèques externes et les ressources graphiques sont chargées depuis un CDN ; le site nécessite donc une connexion pour son premier chargement. Aucun document n'est stocké dans le dépôt, ni sauvegardé sur nos serveurs.
+
+## Utilisation locale
+
+Le site doit être servi en HTTP pour prendre en charge les modules JavaScript et le worker PDF.js :
+
+~~~sh
+python3 -m http.server 8000
+~~~
+
+Puis ouvrir http://localhost:8000 dans le navigateur.
+
+## GitHub Pages
+
+Le workflow GitHub Actions situé dans .github/workflows/pages.yml publie le contenu de la branche main. Il tente d'activer Pages automatiquement avec l'action configure-pages. Si l'activation échoue, configurer dans **Settings > Pages > Build and deployment > Source : GitHub Actions**, puis relancer le workflow.
+
+URL attendue : https://borishnt.github.io/aDaube-Acrobait/
+
+## Bibliothèques et licences tierces
+
+- PDF.js — Apache-2.0 — https://mozilla.github.io/pdf.js/
+- pdf-lib — MIT — https://pdf-lib.js.org/
+- @pdf-lib/fontkit — MIT — https://github.com/Hopding/fontkit
+- Google Material Symbols — Apache-2.0 — https://fonts.google.com/icons
+- Inter — SIL OFL-1.1 — https://rsms.me/inter/
+
+Leurs licences demeurent applicables indépendamment de celle du projet.
+
+## Licence
+
+**The Unlicense**. Le code original du projet est dédié au domaine public dans les juridictions qui le permettent : libre de réutilisation, modification, redistribution et commercialisation, sans attribution imposée.
+
+Dépôt : https://github.com/BorisHnt/aDaube-Acrobait
