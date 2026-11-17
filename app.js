@@ -199,6 +199,7 @@ async function drawBase(index,canvas,generation) {
     await task.promise;
     if(generation!==state.generation||!canvas.isConnected||!visiblePageIndices.has(index))return;
     canvas.replaceWith(ready);
+    ready.parentElement?.classList.remove('loading');
     document.querySelector('.page-card[data-index="'+index+'"]')?.setAttribute('data-rendered',String(generation));
   }catch(error){
     if(error?.name!=='RenderingCancelledException'){
@@ -257,6 +258,7 @@ function unloadPage(index){
   if(task){try{task.cancel();}catch{}activePdfTasks.delete(index);}
   if(card){
     card.dataset.rendered='';
+    card.querySelector('.paper')?.classList.add('loading');
     // Release large bitmap buffers as pages move far out of view.
     const canvas=card.querySelector('canvas.pdf-background');
     if(canvas){canvas.width=1;canvas.height=1;}
@@ -274,6 +276,7 @@ function renderAll(){
     const number=element('span','page-number');number.textContent=String(index+1);
     const paper=element('div','paper');paper.style.width=(p.w*state.zoom)+'px';paper.style.height=(p.h*state.zoom)+'px';
     paper.classList.toggle('text-mode',state.tool!=='select');
+    paper.classList.toggle('loading',p.original!==null);
     const canvas=element('canvas','pdf-background');
     canvas.width=1;canvas.height=1;
     canvas.style.width=(p.w*state.zoom)+'px';canvas.style.height=(p.h*state.zoom)+'px';
@@ -400,6 +403,7 @@ async function openPDF(file){
     const doc=await pdfjs.getDocument({data:bytes.slice()}).promise;
     const pages=[];
     for(let i=0;i<doc.numPages;i++){
+      if(i%20===0)status(t('Ouverture du PDF...')+' '+(i+1)+' / '+doc.numPages);
       const page=await doc.getPage(i+1),vp=page.getViewport({scale:1});
       pages.push({w:vp.width,h:vp.height,original:i,hits:null,items:[]});
       // Give the browser room to respond to user interactions on large documents.
@@ -602,7 +606,10 @@ function perform(action){
     case 'zoom-out':setZoom(state.zoom-.25);break;
     case 'fit':fitWidth();break;
     case 'fit-page':fitPage();break;
-    case 'toggle-sidebar':$('sidebar').style.display=$('sidebar').style.display==='none'?'':'none';break;
+    case 'toggle-sidebar':
+      if(window.innerWidth<800){$('sidebar').style.display='';$('sidebar').classList.toggle('mobile-open');}
+      else $('sidebar').style.display=$('sidebar').style.display==='none'?'':'none';
+      break;
     case 'insert-text':if(!state.pages.length)newDocument();add(state.active,'text');break;
     case 'insert-rect':if(!state.pages.length)newDocument();add(state.active,'rect');break;
     case 'insert-highlight':if(!state.pages.length)newDocument();add(state.active,'highlight',60,65,{color:'#fff176',h:24,w:180});break;
@@ -644,6 +651,7 @@ function wire(){
   });
   $('mobile-properties').addEventListener('click',()=>{
     $('sidebar').classList.remove('mobile-open');
+    $('inspector').style.display='';
     $('inspector').classList.toggle('mobile-open');
   });
   const zoomArea=$('scroll-area');
@@ -718,7 +726,10 @@ function wire(){
   for(const id of ['object-x','object-y','object-width','object-height'])$(id).addEventListener('change',applyGeometry);
   $('help-close').addEventListener('click',()=>$('help-dialog').close());
   $('help-ok').addEventListener('click',()=>$('help-dialog').close());
-  $('hide-inspector').addEventListener('click',()=>$('inspector').style.display='none');
+  $('hide-inspector').addEventListener('click',()=>{
+    $('inspector').classList.remove('mobile-open');
+    $('inspector').style.display=window.innerWidth<800?'':'none';
+  });
   document.addEventListener('pointermove',ev=>{
     if(!drag)return;const s=current();if(!s||s.item.id!==drag.id)return;
     s.item.x=clamp(drag.x+(ev.clientX-drag.clientX)/state.zoom,0,s.page.w-s.item.w);
